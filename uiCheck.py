@@ -8,7 +8,7 @@ import time
 
 class Credentials:
     username = "guest@oceanpowertech.com"
-    password = "Guest!2022"
+    password = ""
 
 
 def radarManip( driver, ac ):
