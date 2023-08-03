@@ -3,15 +3,52 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from time import sleep, strftime
-import vlc
+import pyautogui as pag
 import argparse
+import vlc
 import os
 
 
+class Screen:
+    W = None
+    H = None
+    def __init__(self):
+        pag.FAILSAFE = False
+        self.W,self.H = pag.size()
+    def snap(self, direction, delay = 0.25):
+        pag.moveTo( int( self.W/10 ), int( self.H/2 ) )  # Click left screen, halfway down
+        sleep( delay )
+        pag.click()
+        sleep( delay )
+        if "L" in direction.upper():
+            pag.hotkey("win","left")
+        else: pag.hotkey("win","right")
 
-class Credentials:
-    username = "guest@oceanpowertech.com"
-    password = "Guest!2022"
+class Environment:
+    def __init__(self):
+        self.screen = Screen()
+    
+
+class PageData:
+    class F5:
+        username = "guest@oceanpowertech.com"
+        password = "Guest!2022"
+        title = "Maritime Domain Awareness Solution"
+        idname = "username"
+        pwname = "password"
+        login = (By.CSS_SELECTOR,"button")
+        #url = "https://staging-opt.fconnect.fathom5.io/login"
+        url = "https://opt.fconnect.fathom5.io/login"
+        desiredpos = "left"
+    class VF:
+        username = "opt_user@outlook.com"
+        password = "Ocean Power 1984!"
+        title = "Log In - VesselFinder"
+        idname = "email"
+        pwname = "password"
+        login = (By.CLASS_NAME,"field.cih")
+        url = "https://www.vesselfinder.com/login"
+        desiredpos = "right"
 
 def endRecord( player, instance ):
     player.stop()
@@ -20,12 +57,13 @@ def endRecord( player, instance ):
 def screenRecord( fps = 20 ):
     dt = strftime("%d%b%Y_%H_%M_%S")
     path = f'/home/charlie/Videos/ScreenRecords/SeleniumTest_{dt}.mp4'
-    print(path)
+    print("Screen recording to output location: \n",path)
     if os.path.exists(path):
         print("Warning, path exists")
     instance = vlc.Instance()
+    instance.log_unset()
     player = vlc.libvlc_media_player_new(instance)
-    m = instance.media_new("screen://", ":screen-fps=24", ":sout=#transcode{vcodec=h264,vb=0,scale=0,acodec=mp4a,ab=128,channels=2,samplerate=44100}:file{dst=%s}" % path, ":sout-keep")
+    m = instance.media_new("screen://", ":screen-fps=24", ":sout=#transcode{vcodec=x264,vb=0,scale=0,acodec=mp4a,ab=128,channels=2,samplerate=44100}:file{dst=%s}" % path, ":sout-keep")
     player.set_media(m)
     player.play()
     return player, instance
@@ -37,19 +75,39 @@ def radarManip( driver, ac ):
 
 
 def videoManip( driver, ac, numPans = 5):
-    sl = 1.0
+    sl = 0.5
     button = driver.find_element(By.XPATH,'//button[@title="Maximize"]')
     button.click( )
-    sleep( sl ) 
+    sleep( sl )
+    names = ("zoomIn","zoomOut","buttonLeft","buttonRight","buttonUp","buttonDown")
+    buttons = [driver.find_element(By.CLASS_NAME, k) for k in names]
+    count = 0
+    for button in buttons:
+        print(f"Testing optical camera {names[count]} {numPans} times...")
+        for i in range(numPans):
+            sleep( sl*5 )
+            button.click()
+        sleep( sl*5 )
+        count+=1
+    sleep( sl*5 )
     button = driver.find_element(By.XPATH,'//button[@title="Toggle Thermal"]')
     button.click( )
     sleep( sl )
+    count = 0
+    for button in buttons:
+        print(f"Testing thermal camera {names[count]} {numPans} times...")
+        for i in range(numPans):
+            sleep( sl*5 )
+            button.click()
+        sleep( sl*5 )
+        count+=1
     return driver
 
 
-def mapManip(driver, ac, numZooms = 5, mapsettle = 15):
-    print(f"Allowing {mapsettle}s for map to localize...")
-    sleep( mapsettle )
+def mapManip(driver, ac, numZooms = 5, mapsettle = 30):
+    for i in (1,2,3):
+        sleep( mapsettle/3 )
+        print(f"{mapsettle - i* mapsettle / 3}s remaining for map to localize.")
     print("Testing map functionality")
     geoMap = driver.find_element(By.ID,"map")
     scale = driver.find_element(By.CLASS_NAME,"leaflet-control-scale-line")
@@ -80,10 +138,12 @@ def mapManip(driver, ac, numZooms = 5, mapsettle = 15):
     elem = driver.find_element(By.CLASS_NAME, 'leaflet-draw-draw-polygon')
     elem.click()
     sleep( sl )
-    for lat,lon in zip([0,75],[-100,-250]):
-        #print(f"Plotting coordinate at {lat}-{lon}")
+    for lat,lon in zip([100,100,-100,-100],[100,-100,-100,100]):
+        ac.move_to_element(geoMap)
         sleep( sl )
         ac.move_to_element(geoMap).move_by_offset(lat, lon).click().perform()
+        sleep( sl)
+        ac.move_to_element(geoMap).move_by_offset(lat, lon)
     #----- ZOI Popup Window -----#
     elem = driver.find_element_by_xpath("//div[@title='#007F54']")
     elem.click()
@@ -98,9 +158,11 @@ def mapManip(driver, ac, numZooms = 5, mapsettle = 15):
     sleep(sl)
     elem = driver.find_element(By.CLASS_NAME, 'leaflet-control-button.slew-btn')
     elem.click()
-    for lat,lon in zip([0,100,0,-100],[100,0,-100,0]):
+    for lat,lon in zip([100,100,-100,-100],[100,-100,-100,100]):
+        ac.move_to_element(geoMap)
         sleep( sl*3 )
         ac.move_to_element(geoMap).move_by_offset(lat, lon).click().perform()
+        sleep( sl)
     elem = driver.find_element(By.CLASS_NAME, "leaflet-slew-cancel.leaflet-slew-cancel-active")
     elem.click()
     sleep( sl )
@@ -115,42 +177,48 @@ def mapManip(driver, ac, numZooms = 5, mapsettle = 15):
     return driver
 
 
-def functionalChecks( driver ):
-    driver.get("https://staging-opt.fconnect.fathom5.io/dashboard")
+def UIfunctionalChecks( driver ):
     ac = ActionChains(driver)
     for func in (mapManip, videoManip, radarManip):
-    #for func in (mapManip, videoManip, radarManip):
+    #for func in (videoManip, radarManip):
         driver = func( driver, ac )
         sleep( 2 )
     return driver
-    
-    
-    
-def F5_login( driver ):
-    print("Beginning screen record")
-    driver.get("https://staging-opt.fconnect.fathom5.io/login")
+
+
+def login( driver, thisPage ):
+    driver.get( thisPage.url )
+    env.screen.snap( thisPage.desiredpos )
     title = driver.title
-    assert title == "Maritime Domain Awareness Solution"
+    assert title == thisPage.title
     driver.implicitly_wait(0.5)
-    user_box = driver.find_element(by=By.NAME, value="username")
-    pswd_box = driver.find_element(by=By.NAME, value="password")
-    submit_button = driver.find_element(by=By.CSS_SELECTOR, value="button")
-    user_box.send_keys( Credentials.username )
-    pswd_box.send_keys( Credentials.password )
+    user_box = driver.find_element(by=By.NAME, value= thisPage.idname)
+    pswd_box = driver.find_element(by=By.NAME, value= thisPage.pwname)
+    submit_button = driver.find_element(by = thisPage.login[0], value= thisPage.login[1])
+    user_box.send_keys( thisPage.username )
+    pswd_box.send_keys( thisPage.password )
     submit_button.click()
-    sleep(1.5)
     return driver
+
     
 
 def main( args ):
-    driver = webdriver.Chrome('/usr/local/chromedriver')
     player,instance = screenRecord()
-    driver = F5_login( driver )
-    driver = functionalChecks( driver )
+    driverA = webdriver.Chrome('/usr/local/chromedriver')
+    sleep(0.5)
+    driverA = login( driverA, PageData.F5 )
+    sleep(1.5)
+    driverA = UIfunctionalChecks( driverA )
+    sleep(1.5)
+    driverB = webdriver.Chrome('/usr/local/chromedriver')
+    driverB = login( driverB, PageData.VF )
+    sleep(1.5)
     endRecord( player, instance )
-    driver.quit()
+    driverA.quit()
+    driverB.quit()
 
 if __name__ == "__main__":
+    env = Environment()
     parser = argparse.ArgumentParser()
     parser.add_argument('-pw', '--password', default = None, help="Add password for F5 login")
     parser.add_argument("-i","--inPath", default = None,
